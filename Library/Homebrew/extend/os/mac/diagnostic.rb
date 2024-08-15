@@ -1,13 +1,15 @@
-# typed: true # rubocop:disable Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 module Homebrew
   module Diagnostic
     class Volumes
+      sig { void }
       def initialize
-        @volumes = get_mounts
+        @volumes = T.let(get_mounts, T::Array[String])
       end
 
+      sig { params(path: T.any(Pathname, String)).returns(Integer) }
       def which(path)
         vols = get_mounts path
 
@@ -21,12 +23,13 @@ module Homebrew
         vol_index
       end
 
+      sig { params(path: T.nilable(T.any(Pathname, String))).returns(T::Array[String]) }
       def get_mounts(path = nil)
         vols = []
         # get the volume of path, if path is nil returns all volumes
 
         args = %w[/bin/df -P]
-        args << path if path
+        args << path.to_s if path
 
         Utils.popen_read(*args) do |io|
           io.each_line do |line|
@@ -46,6 +49,7 @@ module Homebrew
             fatal_setup_build_environment_checks, supported_configuration_checks,
             build_from_source_checks
 
+      sig { returns(T::Array[String]) }
       def fatal_preinstall_checks
         checks = %w[
           check_access_directories
@@ -57,6 +61,7 @@ module Homebrew
         checks.freeze
       end
 
+      sig { returns(T::Array[String]) }
       def fatal_build_from_source_checks
         %w[
           check_xcode_license_approved
@@ -68,6 +73,7 @@ module Homebrew
         ].freeze
       end
 
+      sig { returns(T::Array[String]) }
       def fatal_setup_build_environment_checks
         %w[
           check_xcode_minimum_version
@@ -76,12 +82,14 @@ module Homebrew
         ].freeze
       end
 
+      sig { returns(T::Array[String]) }
       def supported_configuration_checks
         %w[
           check_for_unsupported_macos
         ].freeze
       end
 
+      sig { returns(T::Array[String]) }
       def build_from_source_checks
         %w[
           check_for_installed_developer_tools
@@ -90,6 +98,7 @@ module Homebrew
         ].freeze
       end
 
+      sig { returns(T.nilable(String)) }
       def check_for_non_prefixed_findutils
         findutils = Formula["findutils"]
         return unless findutils.any_version_installed?
@@ -105,6 +114,7 @@ module Homebrew
         nil
       end
 
+      sig { returns(T.nilable(String)) }
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
         return if ENV["HOMEBREW_INTEGRATION_TEST"]
@@ -127,6 +137,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_up_to_date
         return unless MacOS::Xcode.outdated?
 
@@ -158,6 +169,7 @@ module Homebrew
         message
       end
 
+      sig { returns(T.nilable(String)) }
       def check_clt_up_to_date
         return unless MacOS::CLT.outdated?
 
@@ -173,6 +185,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_minimum_version
         return unless MacOS::Xcode.below_minimum_version?
 
@@ -186,6 +199,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_clt_minimum_version
         return unless MacOS::CLT.below_minimum_version?
 
@@ -195,6 +209,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_if_xcode_needs_clt_installed
         return unless MacOS::Xcode.needs_clt_installed?
 
@@ -204,6 +219,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_prefix
         prefix = MacOS::Xcode.prefix
         return if prefix.nil?
@@ -215,6 +231,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_prefix_exists
         prefix = MacOS::Xcode.prefix
         return if prefix.nil? || prefix.exist?
@@ -226,6 +243,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_select_path
         return if MacOS::CLT.installed?
         return unless MacOS::Xcode.installed?
@@ -240,6 +258,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_xcode_license_approved
         # If the user installs Xcode-only, they have to approve the
         # license or no "xc*" tool will work.
@@ -253,6 +272,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_filesystem_case_sensitive
         dirs_to_check = [
           HOMEBREW_PREFIX,
@@ -286,11 +306,12 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_for_gettext
         find_relative_paths("lib/libgettextlib.dylib",
                             "lib/libintl.dylib",
                             "include/libintl.h")
-        return if @found.empty?
+        return if @found.blank?
 
         # Our gettext formula will be caught by check_linked_keg_only_brews
         gettext = begin
@@ -321,9 +342,10 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_for_iconv
         find_relative_paths("lib/libiconv.dylib", "include/iconv.h")
-        return if @found.empty?
+        return if @found.blank?
 
         libiconv = begin
           Formulary.factory("libiconv")
@@ -351,6 +373,7 @@ module Homebrew
         end
       end
 
+      sig { returns(T.nilable(String)) }
       def check_for_multiple_volumes
         return unless HOMEBREW_CELLAR.exist?
 
@@ -364,7 +387,7 @@ module Homebrew
           tmp = Pathname.new(Dir.mktmpdir("doctor", HOMEBREW_TEMP))
           begin
             real_tmp = tmp.realpath.parent
-            where_tmp = volumes.which real_tmp
+            where_tmp = volumes.which(real_tmp) if real_tmp.present?
           ensure
             Dir.delete tmp.to_s
           end
@@ -384,6 +407,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_deprecated_caskroom_taps
         tapped_caskroom_taps = Tap.select { |t| t.user == "caskroom" || t.name == "phinze/cask" }
                                   .map(&:name)
@@ -396,6 +420,7 @@ module Homebrew
         EOS
       end
 
+      sig { returns(T.nilable(String)) }
       def check_if_supported_sdk_available
         return unless DevelopmentTools.installed?
         return unless MacOS.sdk_root_needed?
@@ -426,6 +451,7 @@ module Homebrew
       # The CLT 10.x -> 11.x upgrade process on 10.14 contained a bug which broke the SDKs.
       # Notably, MacOSX10.14.sdk would indirectly symlink to MacOSX10.15.sdk.
       # This diagnostic was introduced to check for this and recommend a full reinstall.
+      sig { returns(T.nilable(String)) }
       def check_broken_sdks
         locator = MacOS.sdk_locator
 
