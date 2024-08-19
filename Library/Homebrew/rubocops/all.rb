@@ -1,8 +1,9 @@
-# typed: strict
+# typed: strong
 # frozen_string_literal: true
 
 require_relative "../extend/array"
 require_relative "../extend/blank"
+require_relative "extend/mutable_constant"
 require_relative "blank"
 require_relative "compact_blank"
 require_relative "io_read"
