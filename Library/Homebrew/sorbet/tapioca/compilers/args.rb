@@ -13,9 +13,9 @@ module Tapioca
         end.flatten.freeze, T::Array[String]
       )
 
-      # FIXME: Enable cop again when https://github.com/sorbet/sorbet/issues/3532 is fixed.
       Parsable = T.type_alias { T.any(T.class_of(Homebrew::CLI::Args), T.class_of(Homebrew::AbstractCommand)) }
       ConstantType = type_member { { fixed: Parsable } }
+
       sig { override.returns(T::Enumerable[Parsable]) }
       def self.gather_constants
         # require all the commands to ensure the command subclasses are defined

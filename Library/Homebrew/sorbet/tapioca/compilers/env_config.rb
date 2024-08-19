@@ -7,7 +7,6 @@ require "env_config"
 module Tapioca
   module Compilers
     class EnvConfig < Tapioca::Dsl::Compiler
-      # FIXME: Enable cop again when https://github.com/sorbet/sorbet/issues/3532 is fixed.
       ConstantType = type_member { { fixed: Module } }
       sig { override.returns(T::Enumerable[Module]) }
       def self.gather_constants = [Homebrew::EnvConfig]

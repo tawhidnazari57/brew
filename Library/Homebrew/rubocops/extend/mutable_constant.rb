@@ -4,6 +4,9 @@
 module RuboCop
   module Cop
     module Homebrew
+      # This injects exclusion patterns into the `Style/MutableConstant` cop to skip
+      #   constants that we are unable to freeze.
+      # FIXME: Remove when https://github.com/sorbet/sorbet/issues/3532 is fixed.
       module SkipSorbetConstantAssignments
         extend NodePattern::Macros
 

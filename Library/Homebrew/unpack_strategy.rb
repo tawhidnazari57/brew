@@ -9,8 +9,8 @@ module UnpackStrategy
   include SystemCommand::Mixin
   abstract!
 
-  # FIXME: Enable cop again when https://github.com/sorbet/sorbet/issues/3532 is fixed.
   UnpackStrategyType = T.type_alias { T.all(T::Class[UnpackStrategy], UnpackStrategy::ClassMethods) }
+
   module ClassMethods
     extend T::Helpers
     abstract!

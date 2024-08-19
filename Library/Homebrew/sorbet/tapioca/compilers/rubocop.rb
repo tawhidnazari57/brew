@@ -8,10 +8,10 @@ require_relative "../../../rubocops"
 module Tapioca
   module Compilers
     class RuboCop < Tapioca::Dsl::Compiler
-      # FIXME: Enable cop again when https://github.com/sorbet/sorbet/issues/3532 is fixed.
       # This should be a module whose singleton class contains RuboCop::AST::NodePattern::Macros,
       #   but I don't know how to express that in Sorbet.
       ConstantType = type_member { { fixed: Module } }
+
       sig { override.returns(T::Enumerable[Module]) }
       def self.gather_constants
         all_modules.select do |klass|
