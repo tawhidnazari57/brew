@@ -10,5 +10,5 @@ module RuboCop::Cop::Homebrew::SkipSorbetConstantAssignments
   def t_type_alias?(node, **kwargs, &block); end
 
   sig { params(node: RuboCop::AST::Node, kwargs: T.untyped, block: T.untyped).returns(T.untyped) }
-  def t_type_member?(node, **kwargs, &block); end
+  def type_member?(node, **kwargs, &block); end
 end
