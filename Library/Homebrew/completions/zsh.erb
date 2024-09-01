@@ -46,7 +46,7 @@ __brew_completion_caching_policy() {
   (( $#tmp )) || return 0
 
   # otherwise, invalidate if latest tap index file is missing or newer than cache file
-  tmp=( $(brew --repository)/Library/Taps/*/*/.git/index(om[1]N) )
+  tmp=( "${HOMEBREW_REPOSITORY:-$(brew --repository)}"/Library/Taps/*/*/.git/index(om[1]N) )
   [[ -z $tmp || $tmp -nt $1 ]]
 }
 
@@ -66,7 +66,7 @@ __brew_installed_formulae() {
   [[ -prefix '-' ]] && return 0
 
   local -a formulae
-  formulae=($(brew list --formula))
+  formulae=($(command ls "${HOMEBREW_CELLAR:-$(brew --cellar)}" 2>/dev/null))
   _describe -t formulae 'installed formulae' formulae
 }
 
@@ -98,7 +98,7 @@ __brew_installed_casks() {
 
   local -a list
   local expl
-  list=( $(brew list --cask 2>/dev/null) )
+  list=($(command ls "$(brew --caskroom)" 2>/dev/null))
   _wanted list expl 'installed casks' compadd -a list
 }
 
@@ -114,7 +114,16 @@ __brew_installed_taps() {
   [[ -prefix '-' ]] && return 0
 
   local -a taps
-  taps=($(brew tap))
+  local dir taplib
+  taplib=${HOMEBREW_REPOSITORY:-$(brew --repository)}/Library/Taps
+
+  for dir in "${taplib}"/*/*
+  do
+    [[ -d ${dir} ]] || continue
+    dir=${dir#"${taplib}"/}
+    dir=${dir/homebrew-/}
+    taps+=("${dir}")
+  done
   _describe -t installed-taps 'installed taps' taps
 }
 
