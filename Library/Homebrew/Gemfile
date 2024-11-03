@@ -44,7 +44,7 @@ group :pry, optional: true do
   gem "pry", require: false
 end
 group :style, optional: true do
-  gem "rubocop", require: false
+  gem "rubocop", ">= 1.66.0", require: false
   gem "rubocop-md", require: false
   gem "rubocop-performance", require: false
   gem "rubocop-rspec", require: false
@@ -73,7 +73,7 @@ end
 
 # shared gems (used by multiple groups)
 group :audit, :bump_unversioned_casks, :livecheck, optional: true do
-  gem "rexml", require: false
+  gem "rexml", ">= 3.3.9", require: false
 end
 
 # vendored gems (no group)
