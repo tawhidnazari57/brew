@@ -4,6 +4,7 @@
 require "abstract_command"
 require "fileutils"
 require "tap"
+require "utils/uid"
 
 module Homebrew
   module DevCmd
@@ -39,17 +40,17 @@ module Homebrew
         odie "Tap is already installed!" if tap.installed?
 
         titleized_user = tap.user.dup
-        titleized_repo = tap.repo.dup
+        titleized_repository = tap.repository.dup
         titleized_user[0] = titleized_user[0].upcase
-        titleized_repo[0] = titleized_repo[0].upcase
-        root_url = GitHubPackages.root_url(tap.user, "homebrew-#{tap.repo}") if args.github_packages?
+        titleized_repository[0] = titleized_repository[0].upcase
+        root_url = GitHubPackages.root_url(tap.user, "homebrew-#{tap.repository}") if args.github_packages?
 
         (tap.path/"Formula").mkpath
 
         # FIXME: https://github.com/errata-ai/vale/issues/818
         # <!-- vale off -->
         readme = <<~MARKDOWN
-          # #{titleized_user} #{titleized_repo}
+          # #{titleized_user} #{titleized_repository}
 
           ## How do I install these formulae?
 
@@ -84,7 +85,7 @@ module Homebrew
             test-bot:
               strategy:
                 matrix:
-                  os: [ubuntu-22.04, macos-13, macos-14]
+                  os: [ubuntu-22.04, macos-13, macos-15]
               runs-on: ${{ matrix.os }}
               steps:
                 - name: Set up Homebrew
@@ -172,16 +173,32 @@ module Homebrew
         write_path(tap, ".github/workflows/publish.yml", actions_publish)
 
         unless args.no_git?
-          cd tap.path do
+          cd tap.path do |path|
             Utils::Git.set_name_email!
             Utils::Git.setup_gpg!
 
             # Would be nice to use --initial-branch here but it's not available in
             # older versions of Git that we support.
             safe_system "git", "-c", "init.defaultBranch=#{branch}", "init"
-            safe_system "git", "add", "--all"
-            safe_system "git", "commit", "-m", "Create #{tap} tap"
-            safe_system "git", "branch", "-m", branch
+
+            args = []
+            git_owner = File.stat(File.join(path, ".git")).uid
+            if git_owner != Process.uid && git_owner == Process.euid
+              # Under Homebrew user model, EUID is permitted to execute commands under the UID.
+              # Root users are never allowed (see brew.sh).
+              args << "-c" << "safe.directory=#{path}"
+            end
+
+            # Use the configuration of the original user, which will have author information and signing keys.
+            Utils::UID.drop_euid do
+              env = { HOME: Utils::UID.uid_home }.compact
+              env[:TMPDIR] = nil if (tmpdir = ENV.fetch("TMPDIR", nil)) && !File.writable?(tmpdir)
+              with_env(env) do
+                safe_system "git", *args, "add", "--all"
+                safe_system "git", *args, "commit", "-m", "Create #{tap} tap"
+                safe_system "git", *args, "branch", "-m", branch
+              end
+            end
           end
         end
 

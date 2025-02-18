@@ -1,4 +1,4 @@
-# typed: true # rubocop:todo Sorbet/StrictSigil
+# typed: strict
 # frozen_string_literal: true
 
 require "utils/user"
@@ -10,7 +10,7 @@ module Cask
   module Caskroom
     sig { returns(Pathname) }
     def self.path
-      @path ||= HOMEBREW_PREFIX/"Caskroom"
+      @path ||= T.let(HOMEBREW_PREFIX/"Caskroom", T.nilable(Pathname))
     end
 
     # Return all paths for installed casks.
@@ -56,7 +56,7 @@ module Cask
     sig { params(config: T.nilable(Config)).returns(T::Array[Cask]) }
     def self.casks(config: nil)
       tokens.sort.filter_map do |token|
-        CaskLoader.load(token, config:, warn: false)
+        CaskLoader.load_prefer_installed(token, config:, warn: false)
       rescue TapCaskAmbiguityError => e
         T.must(e.loaders.first).load(config:)
       rescue

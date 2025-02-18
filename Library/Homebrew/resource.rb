@@ -9,7 +9,8 @@ require "extend/on_system"
 # Resource is the fundamental representation of an external resource. The
 # primary formula download, along with other declared resources, are instances
 # of this class.
-class Resource < Downloadable
+class Resource
+  include Downloadable
   include FileUtils
   include OnSystem::MacOSAndLinux
 
@@ -28,7 +29,7 @@ class Resource < Downloadable
     @name = name
     @patches = []
     @livecheck = Livecheck.new(self)
-    @livecheckable = false
+    @livecheck_defined = false
     @insecure = false
     instance_eval(&block) if block
   end
@@ -50,20 +51,6 @@ class Resource < Downloadable
   def owner=(owner)
     @owner = owner
     patches.each { |p| p.owner = owner }
-
-    return if !owner.respond_to?(:full_name) || owner.full_name != "ca-certificates"
-    return if Homebrew::EnvConfig.no_insecure_redirect?
-
-    @insecure = !specs[:bottle] && (DevelopmentTools.ca_file_substitution_required? ||
-                                    DevelopmentTools.curl_substitution_required?)
-    return if @url.nil?
-
-    specs = if @insecure
-      @url.specs.merge({ insecure: true })
-    else
-      @url.specs.except(:insecure)
-    end
-    @url = URL.new(@url.to_s, specs)
   end
 
   # Removes /s from resource names; this allows Go package names
@@ -140,14 +127,22 @@ class Resource < Downloadable
     Partial.new(self, files)
   end
 
-  def fetch(verify_download_integrity: true)
+  sig {
+    override
+      .params(
+        verify_download_integrity: T::Boolean,
+        timeout:                   T.nilable(T.any(Integer, Float)),
+        quiet:                     T::Boolean,
+      ).returns(Pathname)
+  }
+  def fetch(verify_download_integrity: true, timeout: nil, quiet: false)
     fetch_patches
 
     super
   end
 
   # {Livecheck} can be used to check for newer versions of the software.
-  # This method evaluates the DSL specified in the livecheck block of the
+  # This method evaluates the DSL specified in the `livecheck` block of the
   # {Resource} (if it exists) and sets the instance variables of a {Livecheck}
   # object accordingly. This is used by `brew livecheck` to check for newer
   # versions of the software.
@@ -165,15 +160,28 @@ class Resource < Downloadable
   def livecheck(&block)
     return @livecheck unless block
 
-    @livecheckable = true
+    @livecheck_defined = true
     @livecheck.instance_eval(&block)
   end
 
   # Whether a livecheck specification is defined or not.
-  # It returns true when a `livecheck` block is present in the {Resource} and
-  # false otherwise and is used by livecheck.
+  #
+  # It returns `true` when a `livecheck` block is present in the {Resource}
+  # and `false` otherwise.
+  sig { returns(T::Boolean) }
+  def livecheck_defined?
+    @livecheck_defined == true
+  end
+
+  # Whether a livecheck specification is defined or not. This is a legacy alias
+  # for `#livecheck_defined?`.
+  #
+  # It returns `true` when a `livecheck` block is present in the {Resource}
+  # and `false` otherwise.
+  sig { returns(T::Boolean) }
   def livecheckable?
-    @livecheckable == true
+    # odeprecated "`livecheckable?`", "`livecheck_defined?`"
+    @livecheck_defined == true
   end
 
   def sha256(val)
@@ -194,7 +202,7 @@ class Resource < Downloadable
     @download_strategy = @url.download_strategy
   end
 
-  sig { params(val: T.nilable(T.any(String, Version))).returns(T.nilable(Version)) }
+  sig { override.params(val: T.nilable(T.any(String, Version))).returns(T.nilable(Version)) }
   def version(val = nil)
     return super() if val.nil?
 
@@ -211,7 +219,7 @@ class Resource < Downloadable
   end
 
   def patch(strip = :p1, src = nil, &block)
-    p = Patch.create(strip, src, &block)
+    p = ::Patch.create(strip, src, &block)
     patches << p
   end
 
@@ -260,6 +268,27 @@ class Resource < Downloadable
     [*extra_urls, *super].uniq
   end
 
+  # A local resource that doesn't need to be downloaded.
+  class Local < Resource
+    def initialize(path)
+      super(File.basename(path))
+      @downloader = LocalBottleDownloadStrategy.new(path)
+    end
+  end
+
+  # A resource for a formula.
+  class Formula < Resource
+    sig { override.returns(String) }
+    def name
+      T.must(owner).name
+    end
+
+    sig { override.returns(String) }
+    def download_name
+      name
+    end
+  end
+
   # A resource containing a Go package.
   class Go < Resource
     def stage(target, &block)
@@ -276,16 +305,40 @@ class Resource < Downloadable
     def initialize(bottle)
       super("#{bottle.name}_bottle_manifest")
       @bottle = bottle
+      @manifest_annotations = nil
     end
 
     def verify_download_integrity(_filename)
       # We don't have a checksum, but we can at least try parsing it.
       tab
-    rescue Error => e
-      raise DownloadError.new(self, e)
     end
 
     def tab
+      tab = manifest_annotations["sh.brew.tab"]
+      raise Error, "Couldn't find tab from manifest." if tab.blank?
+
+      begin
+        JSON.parse(tab)
+      rescue JSON::ParserError
+        raise Error, "Couldn't parse tab JSON."
+      end
+    end
+
+    sig { returns(T.nilable(Integer)) }
+    def bottle_size
+      manifest_annotations["sh.brew.bottle.size"]&.to_i
+    end
+
+    sig { returns(T.nilable(Integer)) }
+    def installed_size
+      manifest_annotations["sh.brew.bottle.installed_size"]&.to_i
+    end
+
+    private
+
+    def manifest_annotations
+      return @manifest_annotations unless @manifest_annotations.nil?
+
       json = begin
         JSON.parse(cached_download.read)
       rescue JSON::ParserError
@@ -308,19 +361,12 @@ class Resource < Downloadable
       end
       raise Error, "Couldn't find manifest matching bottle checksum." if manifest_annotations.blank?
 
-      tab = manifest_annotations["sh.brew.tab"]
-      raise Error, "Couldn't find tab from manifest." if tab.blank?
-
-      begin
-        JSON.parse(tab)
-      rescue JSON::ParserError
-        raise Error, "Couldn't parse tab JSON."
-      end
+      @manifest_annotations = manifest_annotations
     end
   end
 
   # A resource containing a patch.
-  class PatchResource < Resource
+  class Patch < Resource
     attr_reader :patch_files
 
     def initialize(&block)

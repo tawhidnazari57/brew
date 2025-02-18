@@ -1,3 +1,7 @@
+---
+last_review_date: "1970-01-01"
+---
+
 # Linux CI in `homebrew/core`
 
 We currently use Ubuntu 22.04 for bottling in `homebrew/core`.
@@ -20,12 +24,16 @@ We plan to proceed with regular updates from 2022 onwards. We aim to use the lat
 
 We will start using the latest Ubuntu LTS version for our CI no earlier than 3 months after its release and, ideally, no more than 12 months after its release.
 
-| Distribution | Glibc | GCC | Usage |
+| Distribution | Glibc | GCC | LTS standard security maintenance |
 |---|---|---|---|
 | Ubuntu 14.04 | 2.19 | 4 | From 2014 to 2017 |
 | Ubuntu 16.04 | 2.23 | 5 | From 2017 to 2022 |
-| Ubuntu 22.04 | 2.35 | 11 | From 2022 to 2024 |
-| Ubuntu 24.04 | ? | ? | From 2024 to 2026 |
+| Ubuntu 20.04 | 2.31 | 5 | From 2020 to 2025 |
+| Ubuntu 22.04 | 2.35 | 11 | From 2022 to 2027 |
+| Ubuntu 24.04 | 2.39 | 13 | From 2024 to 2029 |
+| Ubuntu 26.04 | ? | ? | ? |
+
+[Source](https://ubuntu.com/about/release-cycle)
 
 ## Why always use the latest version?
 

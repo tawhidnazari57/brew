@@ -361,8 +361,9 @@ module Homebrew
             EOS
           end
 
-          # we want to allow uses_from_macos for aliases but not bare dependencies
-          if self.class.aliases.include?(dep.name) && !dep.uses_from_macos?
+          # we want to allow uses_from_macos for aliases but not bare dependencies.
+          # we also allow `pkg-config` for backwards compatibility in external taps.
+          if self.class.aliases.include?(dep.name) && !dep.uses_from_macos? && (dep.name != "pkg-config" || @core_tap)
             problem "Dependency '#{dep.name}' is an alias; use the canonical name '#{dep.to_formula.full_name}'."
           end
 
@@ -948,7 +949,7 @@ module Homebrew
       problem <<~EOS
         #{formula.name} seems to be listed in tap_migrations.json!
         Please remove #{formula.name} from present tap & tap_migrations.json
-        before submitting it to Homebrew/homebrew-#{formula.tap.repo}.
+        before submitting it to Homebrew/homebrew-#{formula.tap.repository}.
       EOS
     end
 
@@ -961,6 +962,11 @@ module Homebrew
         is set correctly and expected files are installed.
         The prefix configure/make argument may be case-sensitive.
       EOS
+    end
+
+    def audit_deprecate_disable
+      error = SharedAudits.check_deprecate_disable_reason(formula)
+      problem error if error
     end
 
     def quote_dep(dep)

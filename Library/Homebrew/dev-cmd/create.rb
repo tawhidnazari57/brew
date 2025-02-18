@@ -81,7 +81,7 @@ module Homebrew
 
       sig { returns(Pathname) }
       def create_cask
-        url = args.named.first
+        url = args.named.fetch(0)
         name = if args.set_name.blank?
           stem = Pathname.new(url).stem.rpartition("=").last
           print "Cask name [#{stem}]: "
@@ -179,7 +179,7 @@ module Homebrew
           args.set_name,
           args.set_version,
           tap:     args.tap,
-          url:     args.named.first,
+          url:     args.named.fetch(0),
           mode:,
           license: args.set_license,
           fetch:   !args.no_fetch?,
@@ -220,11 +220,15 @@ module Homebrew
         path = fc.write_formula!
 
         formula = Homebrew.with_no_api_env do
+          CoreTap.instance.clear_cache
           Formula[fc.name]
         end
         PyPI.update_python_resources! formula, ignore_non_pypi_packages: true if args.python?
 
-        puts "Please run `HOMEBREW_NO_INSTALL_FROM_API=1 brew audit --new #{fc.name}` before submitting, thanks."
+        puts <<~EOS
+          Please run the following command before submitting:
+            HOMEBREW_NO_INSTALL_FROM_API=1 brew audit --new #{fc.name}
+        EOS
         path
       end
 

@@ -11,19 +11,19 @@ require "timeout"
 require "formula_assertions"
 require "formula_free_port"
 require "fcntl"
-require "socket"
+require "utils/socket"
 require "cli/parser"
 require "dev-cmd/test"
 require "json/add/exception"
 
-TEST_TIMEOUT_SECONDS = 5 * 60
+DEFAULT_TEST_TIMEOUT_SECONDS = 5 * 60
 
 begin
   ENV.delete("HOMEBREW_FORBID_PACKAGES_FROM_PATHS")
   args = Homebrew::DevCmd::Test.new.args
   Context.current = args.context
 
-  error_pipe = UNIXSocket.open(ENV.fetch("HOMEBREW_ERROR_PIPE"), &:recv_io)
+  error_pipe = Utils::UNIXSocketExt.open(ENV.fetch("HOMEBREW_ERROR_PIPE"), &:recv_io)
   error_pipe.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
 
   trap("INT", old_trap)
@@ -49,8 +49,11 @@ begin
   if args.debug? # --debug is interactive
     run_test.call
   else
-    Timeout.timeout(TEST_TIMEOUT_SECONDS, &run_test)
+    # HOMEBREW_TEST_TIMEOUT_SECS is private API and subject to change.
+    timeout = ENV["HOMEBREW_TEST_TIMEOUT_SECS"]&.to_i || DEFAULT_TEST_TIMEOUT_SECONDS
+    Timeout.timeout(timeout, &run_test)
   end
+# Any exceptions during the test run are reported.
 rescue Exception => e # rubocop:disable Lint/RescueException
   error_pipe.puts e.to_json
   error_pipe.close

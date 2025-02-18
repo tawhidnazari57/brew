@@ -1,11 +1,15 @@
 # Documentation defined in Library/Homebrew/cmd/update.rb
 
-# HOMEBREW_CURLRC, HOMEBREW_DEVELOPER, HOMEBREW_GIT_EMAIL, HOMEBREW_GIT_NAME
-# HOMEBREW_UPDATE_CLEANUP, HOMEBREW_UPDATE_TO_TAG are from the user environment
+# HOMEBREW_API_DOMAIN, HOMEBREW_CURLRC, HOMEBREW_DEBUG, HOMEBREW_DEVELOPER, HOMEBREW_GIT_EMAIL, HOMEBREW_GIT_NAME,
+# HOMEBREW_GITHUB_API_TOKEN, HOMEBREW_NO_ENV_HINTS, HOMEBREW_NO_INSTALL_CLEANUP, HOMEBREW_NO_INSTALL_FROM_API,
+# HOMEBREW_UPDATE_TO_TAG are from the user environment
 # HOMEBREW_LIBRARY, HOMEBREW_PREFIX, HOMEBREW_REPOSITORY are set by bin/brew
-# HOMEBREW_BREW_DEFAULT_GIT_REMOTE, HOMEBREW_BREW_GIT_REMOTE, HOMEBREW_CACHE, HOMEBREW_CELLAR, HOMEBREW_CURL
-# HOMEBREW_DEV_CMD_RUN, HOMEBREW_FORCE_BREWED_CURL, HOMEBREW_FORCE_BREWED_GIT, HOMEBREW_SYSTEM_CURL_TOO_OLD
-# HOMEBREW_USER_AGENT_CURL are set by brew.sh
+# HOMEBREW_API_DEFAULT_DOMAIN, HOMEBREW_AUTO_UPDATE_CASK_TAP, HOMEBREW_AUTO_UPDATE_CORE_TAP,
+# HOMEBREW_AUTO_UPDATE_SECS, HOMEBREW_BREW_DEFAULT_GIT_REMOTE, HOMEBREW_BREW_GIT_REMOTE, HOMEBREW_CACHE,
+# HOMEBREW_CASK_REPOSITORY, HOMEBREW_CELLAR, HOMEBREW_CORE_DEFAULT_GIT_REMOTE, HOMEBREW_CORE_GIT_REMOTE,
+# HOMEBREW_CORE_REPOSITORY, HOMEBREW_CURL, HOMEBREW_DEV_CMD_RUN, HOMEBREW_FORCE_BREWED_CA_CERTIFICATES,
+# HOMEBREW_FORCE_BREWED_CURL, HOMEBREW_FORCE_BREWED_GIT, HOMEBREW_LINUXBREW_CORE_MIGRATION,
+# HOMEBREW_SYSTEM_CURL_TOO_OLD, HOMEBREW_USER_AGENT_CURL are set by brew.sh
 # shellcheck disable=SC2154
 source "${HOMEBREW_LIBRARY}/Homebrew/utils/lock.sh"
 
@@ -82,18 +86,18 @@ git_init_if_necessary() {
   fi
 }
 
-repo_var_suffix() {
-  local repo_dir="${1}"
-  local repo_var_suffix
+repository_var_suffix() {
+  local repository_directory="${1}"
+  local repository_var_suffix
 
-  if [[ "${repo_dir}" == "${HOMEBREW_REPOSITORY}" ]]
+  if [[ "${repository_directory}" == "${HOMEBREW_REPOSITORY}" ]]
   then
-    repo_var_suffix=""
+    repository_var_suffix=""
   else
-    repo_var_suffix="${repo_dir#"${HOMEBREW_LIBRARY}/Taps"}"
-    repo_var_suffix="$(echo -n "${repo_var_suffix}" | tr -C "A-Za-z0-9" "_" | tr "[:lower:]" "[:upper:]")"
+    repository_var_suffix="${repository_directory#"${HOMEBREW_LIBRARY}/Taps"}"
+    repository_var_suffix="$(echo -n "${repository_var_suffix}" | tr -C "A-Za-z0-9" "_" | tr "[:lower:]" "[:upper:]")"
   fi
-  echo "${repo_var_suffix}"
+  echo "${repository_var_suffix}"
 }
 
 upstream_branch() {
@@ -348,7 +352,11 @@ homebrew-update() {
         HOMEBREW_SIMULATE_FROM_CURRENT_BRANCH=1
         ;;
       --auto-update) export HOMEBREW_UPDATE_AUTO=1 ;;
-      --*) ;;
+      --*)
+        onoe "Unknown option: ${option}"
+        brew help update
+        exit 1
+        ;;
       -*)
         [[ "${option}" == *v* ]] && HOMEBREW_VERBOSE=1
         [[ "${option}" == *q* ]] && HOMEBREW_QUIET=1
@@ -369,7 +377,7 @@ EOS
     set -x
   fi
 
-  if [[ -z "${HOMEBREW_UPDATE_CLEANUP}" && -z "${HOMEBREW_UPDATE_TO_TAG}" ]]
+  if [[ -z "${HOMEBREW_UPDATE_TO_TAG}" ]]
   then
     if [[ -n "${HOMEBREW_DEVELOPER}" || -n "${HOMEBREW_DEV_CMD_RUN}" ]]
     then
@@ -592,7 +600,7 @@ EOS
       echo "Checking if we need to fetch ${DIR}..."
     fi
 
-    TAP_VAR="$(repo_var_suffix "${DIR}")"
+    TAP_VAR="$(repository_var_suffix "${DIR}")"
     UPSTREAM_BRANCH_DIR="$(upstream_branch)"
     declare UPSTREAM_BRANCH"${TAP_VAR}"="${UPSTREAM_BRANCH_DIR}"
     declare PREFETCH_REVISION"${TAP_VAR}"="$(git rev-parse -q --verify refs/remotes/origin/"${UPSTREAM_BRANCH_DIR}")"
@@ -778,7 +786,7 @@ EOS
       continue
     fi
 
-    TAP_VAR="$(repo_var_suffix "${DIR}")"
+    TAP_VAR="$(repository_var_suffix "${DIR}")"
     UPSTREAM_BRANCH_VAR="UPSTREAM_BRANCH${TAP_VAR}"
     UPSTREAM_BRANCH="${!UPSTREAM_BRANCH_VAR}"
     CURRENT_REVISION="$(read_current_revision)"

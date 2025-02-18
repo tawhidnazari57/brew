@@ -43,15 +43,17 @@ module GitHub
         type: Symbol, message: String,
         file: T.nilable(T.any(String, Pathname)),
         line: T.nilable(Integer)
-      ).void
+      ).returns(T::Boolean)
     }
     def self.puts_annotation_if_env_set(type, message, file: nil, line: nil)
       # Don't print annotations during tests, too messy to handle these.
-      return if ENV.fetch("HOMEBREW_TESTS", false)
-      return unless env_set?
+      return false if ENV.fetch("HOMEBREW_TESTS", false)
+      return false unless env_set?
 
       std = (type == :notice) ? $stdout : $stderr
       std.puts Annotation.new(type, message)
+
+      true
     end
 
     # Helper class for formatting annotations on GitHub Actions.
@@ -81,6 +83,7 @@ module GitHub
       }
       def initialize(type, message, file: nil, title: nil, line: nil, end_line: nil, column: nil, end_column: nil)
         raise ArgumentError, "Unsupported type: #{type.inspect}" if ANNOTATION_TYPES.exclude?(type)
+        raise ArgumentError, "`title` must not contain `::`" if title.present? && title.include?("::")
 
         require "utils/tty"
         @type = type
@@ -110,7 +113,11 @@ module GitHub
           end
         end
 
-        metadata << ",title=#{Actions.escape(@title)}" if @title
+        if @title
+          metadata << (@file ? "," : " ")
+          metadata << "title=#{Actions.escape(@title)}"
+        end
+        metadata << " " if metadata.end_with?(":")
 
         "::#{metadata}::#{Actions.escape(@message)}"
       end

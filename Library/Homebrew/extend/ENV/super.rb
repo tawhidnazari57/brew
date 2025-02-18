@@ -65,7 +65,7 @@ module Superenv
     self["RUSTFLAGS"] = Hardware.rustflags_target_cpu(effective_arch)
     self["PATH"] = determine_path
     self["PKG_CONFIG_PATH"] = determine_pkg_config_path
-    self["PKG_CONFIG_LIBDIR"] = determine_pkg_config_libdir
+    self["PKG_CONFIG_LIBDIR"] = determine_pkg_config_libdir || ""
     self["HOMEBREW_CCCFG"] = determine_cccfg
     self["HOMEBREW_OPTIMIZATION_LEVEL"] = "Os"
     self["HOMEBREW_BREW_FILE"] = HOMEBREW_BREW_FILE.to_s
@@ -75,6 +75,7 @@ module Superenv
     self["HOMEBREW_TEMP"] = HOMEBREW_TEMP.to_s
     self["HOMEBREW_OPTFLAGS"] = determine_optflags
     self["HOMEBREW_ARCHFLAGS"] = ""
+    self["HOMEBREW_MAKE_JOBS"] = determine_make_jobs.to_s
     self["CMAKE_PREFIX_PATH"] = determine_cmake_prefix_path
     self["CMAKE_FRAMEWORK_PATH"] = determine_cmake_frameworks_path
     self["CMAKE_INCLUDE_PATH"] = determine_cmake_include_path
@@ -92,6 +93,11 @@ module Superenv
     # Prevent Go from automatically downloading a newer toolchain than the one that we have.
     # https://tip.golang.org/doc/toolchain
     self["GOTOOLCHAIN"] = "local"
+    # Prevent Python packages from using bundled libraries by default.
+    # Currently for hidapi, pyzmq and pynacl
+    self["HIDAPI_SYSTEM_HIDAPI"] = "1"
+    self["PYZMQ_NO_BUNDLE"] = "1"
+    self["SODIUM_INSTALL"] = "system"
 
     set_debug_symbols if debug_symbols
 
@@ -313,16 +319,19 @@ module Superenv
   # When passed a block, MAKEFLAGS is removed only for the duration of the block and is restored after its completion.
   sig { params(block: T.nilable(T.proc.returns(T.untyped))).returns(T.untyped) }
   def deparallelize(&block)
-    old = delete("MAKEFLAGS")
+    old_makeflags = delete("MAKEFLAGS")
+    old_make_jobs = delete("HOMEBREW_MAKE_JOBS")
+    self["HOMEBREW_MAKE_JOBS"] = "1"
     if block
       begin
         yield
       ensure
-        self["MAKEFLAGS"] = old
+        self["MAKEFLAGS"] = old_makeflags
+        self["HOMEBREW_MAKE_JOBS"] = old_make_jobs
       end
     end
 
-    old
+    old_makeflags
   end
 
   sig { returns(Integer) }

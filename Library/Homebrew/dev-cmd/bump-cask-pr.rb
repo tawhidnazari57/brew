@@ -27,8 +27,6 @@ module Homebrew
                             "to the cask file."
         switch "--no-audit",
                description: "Don't run `brew audit` before opening the PR."
-        switch "--online",
-               hidden:      true
         switch "--no-style",
                description: "Don't run `brew style --fix` before opening the PR."
         switch "--no-browse",
@@ -60,8 +58,6 @@ module Homebrew
 
       sig { override.void }
       def run
-        odisabled "brew bump-cask-pr --online" if args.online?
-
         # This will be run by `brew audit` or `brew style` later so run it first to
         # not start spamming during normal output.
         gem_groups = []
@@ -76,7 +72,7 @@ module Homebrew
         # Use the user's browser, too.
         ENV["BROWSER"] = EnvConfig.browser
 
-        cask = args.named.to_casks.first
+        cask = args.named.to_casks.fetch(0)
 
         odie "This cask is not in a tap!" if cask.tap.blank?
         odie "This cask's tap is not a Git repository!" unless cask.tap.git?
@@ -190,8 +186,8 @@ module Homebrew
           cask:              Cask::Cask,
           new_hash:          T.any(NilClass, String, Symbol),
           new_version:       BumpVersionParser,
-          replacement_pairs: T::Array[[T.any(Regexp, String), T.any(Regexp, String)]],
-        ).returns(T::Array[[T.any(Regexp, String), T.any(Regexp, String)]])
+          replacement_pairs: T::Array[[T.any(Regexp, String), T.any(Pathname, String)]],
+        ).returns(T::Array[[T.any(Regexp, String), T.any(Pathname, String)]])
       }
       def replace_version_and_checksum(cask, new_hash, new_version, replacement_pairs)
         # When blocks are absent, arch is not relevant. For consistency, we simulate the arm architecture.
@@ -252,7 +248,7 @@ module Homebrew
 
       sig { params(cask: Cask::Cask, new_version: BumpVersionParser).void }
       def check_pull_requests(cask, new_version:)
-        tap_remote_repo = cask.tap.full_name || cask.tap.remote_repo
+        tap_remote_repo = cask.tap.full_name || cask.tap.remote_repository
 
         file = cask.sourcefile_path.relative_path_from(cask.tap.path).to_s
         quiet = args.quiet?

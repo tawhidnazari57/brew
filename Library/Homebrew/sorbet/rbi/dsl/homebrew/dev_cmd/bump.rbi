@@ -12,6 +12,9 @@ end
 
 class Homebrew::DevCmd::Bump::Args < Homebrew::CLI::Args
   sig { returns(T::Boolean) }
+  def auto?; end
+
+  sig { returns(T::Boolean) }
   def cask?; end
 
   sig { returns(T::Boolean) }
@@ -46,7 +49,4 @@ class Homebrew::DevCmd::Bump::Args < Homebrew::CLI::Args
 
   sig { returns(T.nilable(String)) }
   def start_with; end
-
-  sig { returns(T.nilable(String)) }
-  def tap; end
 end

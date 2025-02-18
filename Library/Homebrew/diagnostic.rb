@@ -188,11 +188,15 @@ module Homebrew
         files = Dir.chdir(dir) do
           (Dir.glob(pattern) - Dir.glob(allow_list))
             .select { |f| File.file?(f) && !File.symlink?(f) }
-            .map { |f| File.join(dir, f) }
+            .map do |f|
+              f.sub!(%r{/.*}, "/*") unless @verbose
+              File.join(dir, f)
+            end
+            .sort.uniq
         end
         return if files.empty?
 
-        inject_file_list(files.sort, message)
+        inject_file_list(files, message)
       end
 
       def check_for_stray_dylibs
@@ -315,7 +319,7 @@ module Homebrew
       def check_for_broken_symlinks
         broken_symlinks = []
 
-        Keg::MUST_EXIST_SUBDIRECTORIES.each do |d|
+        Keg.must_exist_subdirectories.each do |d|
           next unless d.directory?
 
           d.find do |path|
@@ -344,7 +348,7 @@ module Homebrew
       def check_exist_directories
         return if HOMEBREW_PREFIX.writable?
 
-        not_exist_dirs = Keg::MUST_EXIST_DIRECTORIES.reject(&:exist?)
+        not_exist_dirs = Keg.must_exist_directories.reject(&:exist?)
         return if not_exist_dirs.empty?
 
         <<~EOS
@@ -359,8 +363,8 @@ module Homebrew
 
       def check_access_directories
         not_writable_dirs =
-          Keg::MUST_BE_WRITABLE_DIRECTORIES.select(&:exist?)
-                                           .reject(&:writable?)
+          Keg.must_be_writable_directories.select(&:exist?)
+             .reject(&:writable?)
         return if not_writable_dirs.empty?
 
         <<~EOS
@@ -560,7 +564,7 @@ module Homebrew
 
       def check_deprecated_official_taps
         tapped_deprecated_taps =
-          Tap.select(&:official?).map(&:repo) & DEPRECATED_OFFICIAL_TAPS
+          Tap.select(&:official?).map(&:repository) & DEPRECATED_OFFICIAL_TAPS
         return if tapped_deprecated_taps.empty?
 
         <<~EOS

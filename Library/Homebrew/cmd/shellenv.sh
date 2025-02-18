@@ -26,7 +26,7 @@ homebrew-shellenv() {
 
     if [[ ! -f "${HOMEBREW_PATHS_FILE}" ]]
     then
-      printf '%s/bin\n%s/sbin\n' "${HOMEBREW_PREFIX}" "${HOMEBREW_PREFIX}" >"${HOMEBREW_PATHS_FILE}" 2>/dev/null
+      printf '%s/bin\n%s/sbin\n' "${HOMEBREW_PREFIX}" "${HOMEBREW_PREFIX}" 2>/dev/null >"${HOMEBREW_PATHS_FILE}"
     fi
 
     if [[ -r "${HOMEBREW_PATHS_FILE}" ]]
@@ -37,12 +37,12 @@ homebrew-shellenv() {
 
   case "${HOMEBREW_SHELL_NAME}" in
     fish | -fish)
-      echo "set -gx HOMEBREW_PREFIX \"${HOMEBREW_PREFIX}\";"
-      echo "set -gx HOMEBREW_CELLAR \"${HOMEBREW_CELLAR}\";"
-      echo "set -gx HOMEBREW_REPOSITORY \"${HOMEBREW_REPOSITORY}\";"
-      echo "fish_add_path -gP \"${HOMEBREW_PREFIX}/bin\" \"${HOMEBREW_PREFIX}/sbin\";"
-      echo "if test -n \"\$MANPATH[1]\"; set -gx MANPATH '' \$MANPATH; end;"
-      echo "if not contains \"${HOMEBREW_PREFIX}/share/info\" \$INFOPATH; set -gx INFOPATH \"${HOMEBREW_PREFIX}/share/info\" \$INFOPATH; end;"
+      echo "set --global --export HOMEBREW_PREFIX \"${HOMEBREW_PREFIX}\";"
+      echo "set --global --export HOMEBREW_CELLAR \"${HOMEBREW_CELLAR}\";"
+      echo "set --global --export HOMEBREW_REPOSITORY \"${HOMEBREW_REPOSITORY}\";"
+      echo "fish_add_path --global --move --path \"${HOMEBREW_PREFIX}/bin\" \"${HOMEBREW_PREFIX}/sbin\";"
+      echo "if test -n \"\$MANPATH[1]\"; set --global --export MANPATH '' \$MANPATH; end;"
+      echo "if not contains \"${HOMEBREW_PREFIX}/share/info\" \$INFOPATH; set --global --export INFOPATH \"${HOMEBREW_PREFIX}/share/info\" \$INFOPATH; end;"
       ;;
     csh | -csh | tcsh | -tcsh)
       echo "setenv HOMEBREW_PREFIX ${HOMEBREW_PREFIX};"
@@ -69,6 +69,10 @@ homebrew-shellenv() {
       echo "export HOMEBREW_PREFIX=\"${HOMEBREW_PREFIX}\";"
       echo "export HOMEBREW_CELLAR=\"${HOMEBREW_CELLAR}\";"
       echo "export HOMEBREW_REPOSITORY=\"${HOMEBREW_REPOSITORY}\";"
+      if [[ "${HOMEBREW_SHELL_NAME}" == "zsh" ]] || [[ "${HOMEBREW_SHELL_NAME}" == "-zsh" ]]
+      then
+        echo "fpath[1,0]=\"${HOMEBREW_PREFIX}/share/zsh/site-functions\";"
+      fi
       if [[ -n "${PATH_HELPER_ROOT}" ]]
       then
         PATH_HELPER_ROOT="${PATH_HELPER_ROOT}" PATH="${HOMEBREW_PATH}" /usr/libexec/path_helper -s

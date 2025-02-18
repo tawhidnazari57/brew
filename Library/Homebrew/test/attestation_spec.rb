@@ -34,6 +34,15 @@ RSpec.describe Homebrew::Attestation do
                       } },
                     ]))
   end
+  let(:fake_result_json_resp_multi_subject) do
+    instance_double(SystemCommand::Result,
+                    stdout: JSON.dump([
+                      { verificationResult: {
+                        verifiedTimestamps: [{ timestamp: "2024-03-13T00:00:00Z" }],
+                        statement:          { subject: [{ name: "nonsense" }, { name: fake_bottle_filename.to_s }] },
+                      } },
+                    ]))
+  end
   let(:fake_result_json_resp_backfill) do
     digest = Digest::SHA256.hexdigest(fake_bottle_url)
     instance_double(SystemCommand::Result,
@@ -234,6 +243,17 @@ RSpec.describe Homebrew::Attestation do
       described_class.check_core_attestation fake_bottle
     end
 
+    it "calls gh with args for homebrew-core and handles a multi-subject attestation" do
+      expect(described_class).to receive(:system_command!)
+        .with(fake_gh, args: ["attestation", "verify", cached_download, "--repo",
+                              described_class::HOMEBREW_CORE_REPO, "--format", "json"],
+              env: { "GH_TOKEN" => fake_gh_creds, "GH_HOST" => "github.com" }, secrets: [fake_gh_creds],
+              print_stderr: false, chdir: HOMEBREW_TEMP)
+        .and_return(fake_result_json_resp_multi_subject)
+
+      described_class.check_core_attestation fake_bottle
+    end
+
     it "calls gh with args for backfill when homebrew-core attestation is missing" do
       expect(described_class).to receive(:system_command!)
         .with(fake_gh, args: ["attestation", "verify", cached_download, "--repo",
@@ -259,7 +279,7 @@ RSpec.describe Homebrew::Attestation do
                               described_class::HOMEBREW_CORE_REPO, "--format", "json"],
               env: { "GH_TOKEN" => fake_gh_creds, "GH_HOST" => "github.com" }, secrets: [fake_gh_creds],
               print_stderr: false, chdir: HOMEBREW_TEMP)
-        .once
+        .exactly(described_class::ATTESTATION_MAX_RETRIES + 1)
         .and_raise(described_class::MissingAttestationError)
 
       expect(described_class).to receive(:system_command!)
@@ -267,6 +287,7 @@ RSpec.describe Homebrew::Attestation do
                               described_class::BACKFILL_REPO, "--format", "json"],
               env: { "GH_TOKEN" => fake_gh_creds, "GH_HOST" => "github.com" }, secrets: [fake_gh_creds],
               print_stderr: false, chdir: HOMEBREW_TEMP)
+        .exactly(described_class::ATTESTATION_MAX_RETRIES + 1)
         .and_return(fake_result_json_resp_too_new)
 
       expect do

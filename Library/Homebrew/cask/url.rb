@@ -6,13 +6,25 @@ require "utils/curl"
 
 module Cask
   # Class corresponding to the `url` stanza.
-  class URL < Delegator
+  class URL < SimpleDelegator
     class DSL
-      attr_reader :uri, :specs,
-                  :verified, :using,
-                  :tag, :branch, :revisions, :revision,
-                  :trust_cert, :cookies, :referer, :header, :user_agent,
-                  :data, :only_path
+      attr_reader :uri, :tag, :branch, :revisions, :revision,
+                  :trust_cert, :cookies, :header, :data, :only_path
+
+      sig { returns(T.nilable(T.any(URI::Generic, String))) }
+      attr_reader :referer
+
+      sig { returns(T::Hash[Symbol, T.untyped]) }
+      attr_reader :specs
+
+      sig { returns(T.nilable(T.any(Symbol, String))) }
+      attr_reader :user_agent
+
+      sig { returns(T.any(T::Class[T.anything], Symbol, NilClass)) }
+      attr_reader :using
+
+      sig { returns(T.nilable(String)) }
+      attr_reader :verified
 
       extend Forwardable
       def_delegators :uri, :path, :scheme, :to_s
@@ -62,7 +74,6 @@ module Cask
         data: nil,
         only_path: nil
       )
-
         @uri = URI(uri)
 
         header = Array(header) unless header.nil?
@@ -88,21 +99,26 @@ module Cask
 
     class BlockDSL
       # Allow accessing the URL associated with page contents.
-      module PageWithURL
+      class PageWithURL < SimpleDelegator
         # Get the URL of the fetched page.
         #
         # ### Example
         #
         # ```ruby
         # url "https://example.org/download" do |page|
-        #   file = page[/href="([^"]+.dmg)"/, 1]
-        #   URL.join(page.url, file)
+        #   file_path = page[/href="([^"]+\.dmg)"/, 1]
+        #   URI.join(page.url, file_path)
         # end
         # ```
         #
         # @api public
         sig { returns(URI::Generic) }
         attr_accessor :url
+
+        def initialize(str, url)
+          super(str)
+          @url = url
+        end
       end
 
       sig {
@@ -117,23 +133,24 @@ module Cask
         @uri = uri
         @dsl = dsl
         @block = block
+
+        odeprecated "cask `url do` blocks" if @block
       end
 
       sig { returns(T.any(T.any(URI::Generic, String), [T.any(URI::Generic, String), Hash])) }
       def call
         if @uri
-          result = ::Utils::Curl.curl_output("--fail", "--silent", "--location", @uri)
+          result = ::Utils::Curl.curl_output("--fail", "--silent", "--location", @uri.to_s)
           result.assert_success!
 
-          page = result.stdout
-          page.extend PageWithURL
-          page.url = URI(@uri)
-
+          page = PageWithURL.new(result.stdout, URI(@uri))
           instance_exec(page, &@block)
         else
           instance_exec(&@block)
         end
       end
+
+      private
 
       # Allows calling a nested `url` stanza in a `url do` block.
       #
@@ -148,7 +165,6 @@ module Cask
       def url(uri, &block)
         self.class.new(uri, dsl: @dsl, &block).call
       end
-      private :url
 
       # This allows calling DSL methods from inside a `url` block.
       #
@@ -160,12 +176,10 @@ module Cask
           super
         end
       end
-      private :method_missing
 
       def respond_to_missing?(method, include_all)
         @dsl.respond_to?(method, include_all) || super
       end
-      private :respond_to_missing?
     end
 
     sig {
@@ -242,18 +256,29 @@ module Cask
       @caller_location = caller_location
     end
 
-    def __getobj__
-      @dsl
-    end
-
-    def __setobj__(dsl)
-      @dsl = dsl
-    end
-
     sig { returns(Homebrew::SourceLocation) }
     def location
       Homebrew::SourceLocation.new(@caller_location.lineno, raw_url_line&.index("url"))
     end
+
+    sig { params(ignore_major_version: T::Boolean).returns(T::Boolean) }
+    def unversioned?(ignore_major_version: false)
+      interpolated_url = raw_url_line&.then { |line| line[/url\s+"([^"]+)"/, 1] }
+
+      return false unless interpolated_url
+
+      interpolated_url = interpolated_url.gsub(/\#{\s*arch\s*}/, "")
+      interpolated_url = interpolated_url.gsub(/\#{\s*version\s*\.major\s*}/, "") if ignore_major_version
+
+      interpolated_url.exclude?('#{')
+    end
+
+    sig { returns(T::Boolean) }
+    def from_block?
+      @from_block
+    end
+
+    private
 
     sig { returns(T.nilable(String)) }
     def raw_url_line
@@ -263,23 +288,6 @@ module Cask
                       .each_line
                       .drop(@caller_location.lineno - 1)
                       .first
-    end
-    private :raw_url_line
-
-    sig { params(ignore_major_version: T::Boolean).returns(T::Boolean) }
-    def unversioned?(ignore_major_version: false)
-      interpolated_url = raw_url_line&.then { |line| line[/url\s+"([^"]+)"/, 1] }
-
-      return false unless interpolated_url
-
-      interpolated_url = interpolated_url.gsub(/\#{\s*version\s*\.major\s*}/, "") if ignore_major_version
-
-      interpolated_url.exclude?('#{')
-    end
-
-    sig { returns(T::Boolean) }
-    def from_block?
-      @from_block
     end
   end
 end

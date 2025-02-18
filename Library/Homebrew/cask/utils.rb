@@ -4,11 +4,11 @@
 require "utils/user"
 require "open3"
 
-BUG_REPORTS_URL = "https://github.com/Homebrew/homebrew-cask#reporting-bugs"
-
 module Cask
   # Helper functions for various cask operations.
   module Utils
+    BUG_REPORTS_URL = "https://github.com/Homebrew/homebrew-cask#reporting-bugs"
+
     def self.gain_permissions_mkpath(path, command: SystemCommand)
       dir = path.ascend.find(&:directory?)
       return if path == dir
@@ -47,7 +47,7 @@ module Cask
       gain_permissions(path, permission_flags, command) do |p|
         if p.parent.writable?
           if directory
-            p.rmtree
+            FileUtils.rm_r p
           else
             FileUtils.rm_f p
           end
@@ -128,7 +128,7 @@ module Cask
     end
 
     def self.method_missing_message(method, token, section = nil)
-      message = +"Unexpected method '#{method}' called "
+      message = "Unexpected method '#{method}' called "
       message << "during #{section} " if section
       message << "on Cask #{token}."
 

@@ -8,7 +8,15 @@ module Kernel
   def require?(path)
     return false if path.nil?
 
-    require path
+    if defined?(Warnings)
+      # Work around require warning when done repeatedly:
+      # https://bugs.ruby-lang.org/issues/21091
+      Warnings.ignore(/already initialized constant/, /previous definition of/) do
+        require path
+      end
+    else
+      require path
+    end
     true
   rescue LoadError => e
     # we should raise on syntax errors but not if the file doesn't exist.
@@ -64,9 +72,13 @@ module Kernel
   # @api public
   sig { params(message: T.any(String, Exception)).void }
   def opoo(message)
+    require "utils/github/actions"
+    return if GitHub::Actions.puts_annotation_if_env_set(:warning, message.to_s)
+
+    require "utils/formatter"
+
     Tty.with($stderr) do |stderr|
       stderr.puts Formatter.warning(message, label: "Warning")
-      GitHub::Actions.puts_annotation_if_env_set(:warning, message.to_s)
     end
   end
 
@@ -75,12 +87,13 @@ module Kernel
   # @api public
   sig { params(message: T.any(String, Exception)).void }
   def onoe(message)
-    require "utils/formatter"
     require "utils/github/actions"
+    return if GitHub::Actions.puts_annotation_if_env_set(:error, message.to_s)
+
+    require "utils/formatter"
 
     Tty.with($stderr) do |stderr|
       stderr.puts Formatter.error(message, label: "Error")
-      GitHub::Actions.puts_annotation_if_env_set(:error, message.to_s)
     end
   end
 
@@ -156,8 +169,8 @@ module Kernel
 
       require "tap"
 
-      tap = Tap.fetch(match[:user], match[:repo])
-      tap_message = +"\nPlease report this issue to the #{tap.full_name} tap"
+      tap = Tap.fetch(match[:user], match[:repository])
+      tap_message = "\nPlease report this issue to the #{tap.full_name} tap"
       tap_message += " (not Homebrew/brew or Homebrew/homebrew-core)" unless tap.official?
       tap_message += ", or even better, submit a PR to fix it" if replacement
       tap_message << ":\n  #{line.sub(/^(.*:\d+):.*$/, '\1')}\n\n"
@@ -166,7 +179,7 @@ module Kernel
     file, line, = backtrace.first.split(":")
     line = line.to_i if line.present?
 
-    message = +"Calling #{method} is #{verb}! #{replacement_message}"
+    message = "Calling #{method} is #{verb}! #{replacement_message}"
     message << tap_message if tap_message
     message.freeze
 
@@ -178,8 +191,6 @@ module Kernel
       exception.set_backtrace(backtrace)
       raise exception
     elsif !Homebrew.auditing?
-      require "utils/github/actions"
-      GitHub::Actions.puts_annotation_if_env_set(:warning, message, file:, line:)
       opoo message
     end
   end
@@ -282,8 +293,8 @@ module Kernel
     Homebrew._system(cmd, *args) do
       # Redirect output streams to `/dev/null` instead of closing as some programs
       # will fail to execute if they can't write to an open stream.
-      $stdout.reopen("/dev/null")
-      $stderr.reopen("/dev/null")
+      $stdout.reopen(File::NULL)
+      $stderr.reopen(File::NULL)
     end
   end
 

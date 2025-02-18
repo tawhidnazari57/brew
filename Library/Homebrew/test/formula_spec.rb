@@ -60,11 +60,16 @@ RSpec.describe Formula do
       expect { klass.new }.to raise_error(ArgumentError)
     end
 
+    specify "formula instantiation without a subclass" do
+      expect { described_class.new(name, path, spec) }
+        .to raise_error(RuntimeError, "Do not call `Formula.new' directly without a subclass.")
+    end
+
     context "when in a Tap" do
       let(:tap) { Tap.fetch("foo", "bar") }
       let(:path) { (tap.path/"Formula/#{name}.rb") }
-      let(:full_name) { "#{tap.user}/#{tap.repo}/#{name}" }
-      let(:full_alias_name) { "#{tap.user}/#{tap.repo}/#{alias_name}" }
+      let(:full_name) { "#{tap.user}/#{tap.repository}/#{name}" }
+      let(:full_alias_name) { "#{tap.user}/#{tap.repository}/#{alias_name}" }
 
       specify "formula instantiation" do
         expect(f.name).to eq(name)
@@ -228,7 +233,7 @@ RSpec.describe Formula do
 
     alias_name = "bar"
     alias_path = tap.alias_dir/alias_name
-    full_alias_name = "#{tap.user}/#{tap.repo}/#{alias_name}"
+    full_alias_name = "#{tap.user}/#{tap.repository}/#{alias_name}"
     tap.alias_dir.mkpath
     FileUtils.ln_sf f.path, alias_path
 
@@ -699,16 +704,16 @@ RSpec.describe Formula do
     expect(f.livecheck.regex).to eq(/test-v?(\d+(?:\.\d+)+)\.t/i)
   end
 
-  describe "#livecheckable?" do
-    specify "no livecheck block defined" do
+  describe "#livecheck_defined?" do
+    specify "no `livecheck` block defined" do
       f = formula do
         url "https://brew.sh/test-1.0.tbz"
       end
 
-      expect(f.livecheckable?).to be false
+      expect(f.livecheck_defined?).to be false
     end
 
-    specify "livecheck block defined" do
+    specify "`livecheck` block defined" do
       f = formula do
         url "https://brew.sh/test-1.0.tbz"
         livecheck do
@@ -716,7 +721,7 @@ RSpec.describe Formula do
         end
       end
 
-      expect(f.livecheckable?).to be true
+      expect(f.livecheck_defined?).to be true
     end
 
     specify "livecheck references Formula URL" do
@@ -1017,6 +1022,11 @@ RSpec.describe Formula do
           "x86_64_linux": {
             "dependencies": [
               "intel-formula",
+              "linux-formula"
+            ]
+          },
+          "arm64_linux": {
+            "dependencies": [
               "linux-formula"
             ]
           }
@@ -1545,7 +1555,7 @@ RSpec.describe Formula do
         described_class.clear_cache
         expect(f.outdated_kegs(fetch_head: true)).not_to be_empty
 
-        head_prefix_a.rmtree
+        FileUtils.rm_r(head_prefix_a)
         described_class.clear_cache
         expect(f.outdated_kegs(fetch_head: true)).not_to be_empty
 
@@ -1553,7 +1563,7 @@ RSpec.describe Formula do
         described_class.clear_cache
         expect(f.outdated_kegs(fetch_head: true)).to be_empty
       ensure
-        testball_repo.rmtree if testball_repo.exist?
+        FileUtils.rm_r(testball_repo) if testball_repo.exist?
       end
     end
 
@@ -1632,7 +1642,7 @@ RSpec.describe Formula do
         expect(f.outdated_kegs).not_to be_empty
 
         described_class.clear_cache
-        head_prefix.rmtree
+        FileUtils.rm_r(head_prefix)
 
         setup_tab_for_prefix(head_prefix, versions: { "stable" => "1.0", "version_scheme" => 2 })
         expect(f.outdated_kegs).to be_empty
@@ -1892,9 +1902,9 @@ RSpec.describe Formula do
 
     it "generates completion scripts" do
       f.brew { f.install }
-      expect(f.bash_completion/"testball").to be_a_file
-      expect(f.zsh_completion/"_testball").to be_a_file
-      expect(f.fish_completion/"testball.fish").to be_a_file
+      expect(f.bash_completion/"foo").to be_a_file
+      expect(f.zsh_completion/"_foo").to be_a_file
+      expect(f.fish_completion/"foo.fish").to be_a_file
     end
   end
 

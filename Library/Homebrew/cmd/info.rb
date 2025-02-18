@@ -27,8 +27,8 @@ module Homebrew
         EOS
         switch "--analytics",
                description: "List global Homebrew analytics data or, if specified, installation and " \
-                            "build error data for <formula> (provided neither `HOMEBREW_NO_ANALYTICS` " \
-                            "nor `HOMEBREW_NO_GITHUB_API` are set)."
+                            "build error data for <formula> (provided neither `$HOMEBREW_NO_ANALYTICS` " \
+                            "nor `$HOMEBREW_NO_GITHUB_API` are set)."
         flag   "--days=",
                depends_on:  "--analytics",
                description: "How many days of analytics data to retrieve. " \
@@ -45,6 +45,8 @@ module Homebrew
         switch "--github",
                description: "Open the GitHub source page for <formula> and <cask> in a browser. " \
                             "To view the history locally: `brew log -p` <formula> or <cask>"
+        switch "--fetch-manifest",
+               description: "Fetch GitHub Packages manifest for extra information when <formula> is not installed."
         flag   "--json",
                description: "Print a JSON representation. Currently the default value for <version> is `v1` for " \
                             "<formula>. For <formula> and <cask> use `v2`. See the docs for examples of using the " \
@@ -55,7 +57,7 @@ module Homebrew
         switch "--eval-all",
                depends_on:  "--json",
                description: "Evaluate all available formulae and casks, whether installed or not, to print their " \
-                            "JSON. Implied if `HOMEBREW_EVAL_ALL` is set."
+                            "JSON. Implied if `$HOMEBREW_EVAL_ALL` is set."
         switch "--variations",
                depends_on:  "--json",
                description: "Include the variations hash in each formula's JSON output."
@@ -69,6 +71,8 @@ module Homebrew
         conflicts "--installed", "--eval-all"
         conflicts "--installed", "--all"
         conflicts "--formula", "--cask"
+        conflicts "--fetch-manifest", "--cask"
+        conflicts "--fetch-manifest", "--json"
 
         named_args [:formula, :cask]
       end
@@ -158,12 +162,6 @@ module Homebrew
             info_formula(obj)
           when Cask::Cask
             info_cask(obj)
-          when FormulaUnreadableError, FormulaClassUnavailableError,
-             TapFormulaUnreadableError, TapFormulaClassUnavailableError,
-             Cask::CaskUnreadableError
-            # We found the formula/cask, but failed to read it
-            $stderr.puts obj.backtrace if Homebrew::EnvConfig.developer?
-            ofail obj.message
           when FormulaOrCaskUnavailableError
             # The formula/cask could not be found
             ofail obj.message
@@ -300,9 +298,20 @@ module Homebrew
         kegs = [
           *heads.sort_by { |keg| -keg.tab.time.to_i },
           *versioned.sort_by(&:scheme_and_version),
-        ]
+        ].select { |keg| (tap = keg.tab.tap).nil? || tap == formula.tap }
         if kegs.empty?
           puts "Not installed"
+          if (bottle = formula.bottle)
+            begin
+              bottle.fetch_tab(quiet: !args.debug?) if args.fetch_manifest?
+              bottle_size = bottle.bottle_size
+              installed_size = bottle.installed_size
+              puts "Bottle Size: #{disk_usage_readable(bottle_size)}" if bottle_size
+              puts "Installed Size: #{disk_usage_readable(installed_size)}" if installed_size
+            rescue RuntimeError => e
+              odebug e
+            end
+          end
         else
           puts "Installed"
           kegs.each do |keg|
@@ -373,7 +382,7 @@ module Homebrew
       def info_cask(cask)
         require "cask/info"
 
-        Cask::Info.info(cask)
+        Cask::Info.info(cask, args:)
       end
     end
   end

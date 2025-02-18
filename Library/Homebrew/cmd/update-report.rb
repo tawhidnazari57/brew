@@ -277,7 +277,7 @@ module Homebrew
         puts
 
         new_major_version, new_minor_version, new_patch_version = new_tag.split(".").map(&:to_i)
-        old_major_version, old_minor_version = (old_tag.split(".")[0, 2]).map(&:to_i) if old_tag.present?
+        old_major_version, old_minor_version = old_tag.split(".")[0, 2].map(&:to_i) if old_tag.present?
         if old_tag.blank? || new_major_version > old_major_version || new_minor_version > old_minor_version
           puts <<~EOS
             The #{new_major_version}.#{new_minor_version}.0 release notes are available on the Homebrew Blog:
@@ -432,11 +432,11 @@ class Reporter
       @api_names_before_txt = api_names_before_txt
       @api_dir_prefix = api_dir_prefix
     else
-      initial_revision_var = "HOMEBREW_UPDATE_BEFORE#{tap.repo_var_suffix}"
+      initial_revision_var = "HOMEBREW_UPDATE_BEFORE#{tap.repository_var_suffix}"
       @initial_revision = ENV[initial_revision_var].to_s
       raise ReporterRevisionUnsetError, initial_revision_var if @initial_revision.empty?
 
-      current_revision_var = "HOMEBREW_UPDATE_AFTER#{tap.repo_var_suffix}"
+      current_revision_var = "HOMEBREW_UPDATE_AFTER#{tap.repository_var_suffix}"
       @current_revision = ENV[current_revision_var].to_s
       raise ReporterRevisionUnsetError, current_revision_var if @current_revision.empty?
     end
@@ -626,6 +626,7 @@ class Reporter
           unless Formulary.factory(new_full_name).keg_only?
             system HOMEBREW_BREW_FILE, "link", new_full_name, "--overwrite"
           end
+        # Rescue any possible exception types.
         rescue Exception => e # rubocop:disable Lint/RescueException
           if Homebrew::EnvConfig.developer?
             require "utils/backtrace"

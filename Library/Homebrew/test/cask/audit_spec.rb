@@ -508,13 +508,13 @@ RSpec.describe Cask::Audit, :cask do
       let(:online) { true }
       let(:message) { /Version '[^']*' differs from '[^']*' retrieved by livecheck\./ }
 
-      context "when the Cask has a livecheck block using skip" do
+      context "when the Cask has a `livecheck` block using skip" do
         let(:cask_token) { "livecheck-skip" }
 
         it { is_expected.not_to error_with(message) }
       end
 
-      context "when the Cask has a livecheck block referencing a Cask using skip" do
+      context "when the Cask has a `livecheck` block referencing a Cask using skip" do
         let(:cask_token) { "livecheck-skip-reference" }
 
         it { is_expected.not_to error_with(message) }
@@ -526,7 +526,7 @@ RSpec.describe Cask::Audit, :cask do
         it { is_expected.not_to error_with(message) }
       end
 
-      context "when the Cask has a livecheck block referencing a deprecated Cask" do
+      context "when the Cask has a `livecheck` block referencing a deprecated Cask" do
         let(:cask_token) { "livecheck-deprecated-reference" }
 
         it { is_expected.not_to error_with(message) }
@@ -538,7 +538,7 @@ RSpec.describe Cask::Audit, :cask do
         it { is_expected.not_to error_with(message) }
       end
 
-      context "when the Cask has a livecheck block referencing a disabled Cask" do
+      context "when the Cask has a `livecheck` block referencing a disabled Cask" do
         let(:cask_token) { "livecheck-disabled-reference" }
 
         it { is_expected.not_to error_with(message) }
@@ -550,7 +550,7 @@ RSpec.describe Cask::Audit, :cask do
         it { is_expected.not_to error_with(message) }
       end
 
-      context "when the Cask has a livecheck block referencing a Cask where version is :latest" do
+      context "when the Cask has a `livecheck` block referencing a Cask where version is :latest" do
         let(:cask_token) { "livecheck-version-latest-reference" }
 
         it { is_expected.not_to error_with(message) }
@@ -562,7 +562,7 @@ RSpec.describe Cask::Audit, :cask do
         it { is_expected.not_to error_with(message) }
       end
 
-      context "when the Cask has a livecheck block referencing a Cask with an unversioned url" do
+      context "when the Cask has a `livecheck` block referencing a Cask with an unversioned url" do
         let(:cask_token) { "livecheck-url-unversioned-reference" }
 
         it { is_expected.not_to error_with(message) }
@@ -948,36 +948,6 @@ RSpec.describe Cask::Audit, :cask do
       end
     end
 
-    describe "url checks" do
-      let(:only) { %w[unnecessary_verified missing_verified no_match] }
-
-      context "with a block" do
-        let(:cask_token) { "booby-trap" }
-
-        context "when loading the cask" do
-          it "does not evaluate the block" do
-            expect { cask }.not_to raise_error
-          end
-        end
-
-        context "when doing an offline audit" do
-          let(:online) { false }
-
-          it "does not evaluate the block" do
-            expect(run).not_to error_with(/Boom/)
-          end
-        end
-
-        context "when doing and online audit" do
-          let(:online) { true }
-
-          it "evaluates the block" do
-            expect(run).to error_with(/Boom/)
-          end
-        end
-      end
-    end
-
     describe "token conflicts" do
       let(:only) { ["token_conflicts"] }
       let(:cask_token) { "with-binary" }
@@ -1171,34 +1141,51 @@ RSpec.describe Cask::Audit, :cask do
 
         it { is_expected.to error_with(/a homepage stanza is required/) }
       end
+    end
 
-      context "when url is lazy" do
-        let(:strict) { true }
-        let(:cask_token) { "with-lazy" }
+    describe "checking deprecate/disable" do
+      let(:only) { ["deprecate_disable"] }
+      let(:cask_token) { "deprecated-cask" }
+
+      context "when deprecate/disable is used with a valid reason" do
         let(:cask) do
           tmp_cask cask_token.to_s, <<~RUBY
             cask '#{cask_token}' do
-              version '1.8.0_72,8.13.0.5'
-              sha256 '8dd95daa037ac02455435446ec7bc737b34567afe9156af7d20b2a83805c1d8a'
-              url do
-                ['https://brew.sh/foo.zip', {referer: 'https://example.com', cookies: {'foo' => 'bar'}}]
-              end
-              name 'Audit'
-              desc 'Audit Description'
-              homepage 'https://brew.sh'
-              app 'Audit.app'
+              version "1.0"
+                sha256 "8dd95daa037ac02455435446ec7bc737b34567afe9156af7d20b2a83805c1d8a"
+                url "https://brew.sh/foo.zip"
+                name "Audit"
+                desc "Cask Auditor"
+                homepage "https://brew.sh/"
+                app "Audit.app"
+                deprecate! date: "2021-01-01", because: :foobar
             end
           RUBY
         end
 
-        it { is_expected.to pass }
+        it "fails" do
+          expect(run).to error_with(/foobar is not a valid deprecate! or disable! reason/)
+        end
+      end
 
-        it "receives a referer" do
-          expect(audit.cask.url.referer).to eq "https://example.com"
+      context "when deprecate/disable is used with an invalid reason" do
+        let(:cask) do
+          tmp_cask cask_token.to_s, <<~RUBY
+            cask '#{cask_token}' do
+              version "1.0"
+                sha256 "8dd95daa037ac02455435446ec7bc737b34567afe9156af7d20b2a83805c1d8a"
+                url "https://brew.sh/foo.zip"
+                name "Audit"
+                desc "Cask Auditor"
+                homepage "https://brew.sh/"
+                app "Audit.app"
+                disable! date: "2021-01-01", because: :discontinued
+            end
+          RUBY
         end
 
-        it "receives cookies" do
-          expect(audit.cask.url.cookies).to eq "foo" => "bar"
+        it "passes" do
+          expect(run).to pass
         end
       end
     end

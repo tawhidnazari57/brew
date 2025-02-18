@@ -1,4 +1,5 @@
 #!/bin/bash
+# vim: ft=ruby
 # Make sure this shim uses the same Ruby interpreter that is used by Homebrew.
 if [[ -z "${HOMEBREW_RUBY_PATH}" ]]
 then
@@ -39,7 +40,9 @@ class Cmd
 
   def initialize(arg0, args)
     @arg0 = arg0
-    @args = args.freeze
+    split_args = split_args_at_double_dash(args)
+    @args = split_args[0].freeze
+    @positional_args = split_args[1].freeze
     @config = ENV.fetch("HOMEBREW_CCCFG", "")
     @prefix = ENV["HOMEBREW_PREFIX"]
     @cellar = ENV["HOMEBREW_CELLAR"]
@@ -54,6 +57,15 @@ class Cmd
     @formula_buildpath = ENV["HOMEBREW_FORMULA_BUILDPATH"]
     # matches opt or cellar prefix and formula name
     @keg_regex = %r{(#{Regexp.escape(opt)}|#{Regexp.escape(cellar)})/([\w+-.@]+)}
+  end
+
+  def split_args_at_double_dash(args)
+    double_dash_index = args.find_index("--")
+    if double_dash_index
+      [args[...double_dash_index], args[double_dash_index..]]
+    else
+      [args, []]
+    end
   end
 
   def mode
@@ -91,8 +103,6 @@ class Cmd
         "#{ENV["HOMEBREW_PREFIX"]}/opt/swift/libexec/bin/clang++"
       when /clang/
         "clang++"
-      when /llvm-gcc/
-        "llvm-g++-4.2"
       when /(g)?cc(-\d+(\.\d)?)?$/
         "g++#{Regexp.last_match(2)}"
       end
@@ -131,7 +141,7 @@ class Cmd
       end
     end
 
-    case mode
+    optional_args = case mode
     when :ccld
       cflags + args + cppflags + ldflags
     when :cxxld
@@ -147,6 +157,8 @@ class Cmd
     when :ld
       ldflags + args
     end
+
+    optional_args + @positional_args
   end
 
   def refurbished_args
@@ -314,11 +326,11 @@ class Cmd
   def cppflags
     args = []
     args += path_flags("-isystem", isystem_paths) + path_flags("-I", include_paths)
-    # Add -nostdinc when building against glibc@2.13 to avoid mixing system and brewed glibc headers.
-    args << "-nostdinc" if @deps.include?("glibc@2.13")
+    # Add -nostdinc when building against versioned glibc to avoid mixing system and brewed glibc headers.
+    args << "-nostdinc" if @deps.any? { |dep| dep.match?(/^glibc@.+$/) }
     # Ideally this would be -ffile-prefix-map, but that requires a minimum of GCC 8, LLVM Clang 10 or Apple Clang 12
     # and detecting the version dynamically based on what `HOMEBREW_CC` may have been rewritten to point to is awkward
-    args << "-fdebug-prefix-map=#{formula_buildpath}=." if formula_buildpath
+    args << "-fdebug-prefix-map=#{formula_buildpath}=." if formula_buildpath && !debug_symbols?
     args
   end
 
@@ -341,19 +353,20 @@ class Cmd
   end
 
   def ldflags_linux(args)
+    versioned_glibc_dep = @deps.find { |dep| dep.match?(/^glibc@.+$/) }
     unless mode == :ld
       wl = "-Wl,"
-      if @deps.include?("glibc@2.13")
-        args << "-B#{@opt}/glibc@2.13/lib"
+      if versioned_glibc_dep
+        args << "-B#{@opt}/#{versioned_glibc_dep}/lib"
       else
         args << "-B#{@opt}/glibc/lib"
       end
     end
     args += rpath_flags("#{wl}-rpath=", rpath_paths)
     args += ["#{wl}--dynamic-linker=#{dynamic_linker_path}"] if dynamic_linker_path
-    # Use -rpath-link to make sure linker uses glibc@2.13 rather than the system glibc for indirect
+    # Use -rpath-link to make sure linker uses versioned glibc rather than the system glibc for indirect
     # dependencies because -L will only handle direct dependencies.
-    args << "#{wl}-rpath-link=#{@opt}/glibc@2.13/lib" if @deps.include?("glibc@2.13")
+    args << "#{wl}-rpath-link=#{@opt}/#{versioned_glibc_dep}/lib" if versioned_glibc_dep
     args
   end
 
@@ -431,25 +444,30 @@ class Cmd
     config.include?("D")
   end
 
+  def linker_flags
+    @args.select { |arg| arg.start_with?("-Wl,") }
+         .flat_map { |arg| arg.delete_prefix("-Wl,").split(",") }
+  end
+
   def no_fixup_chains?
     return false unless config.include?("f")
     return false unless calls_ld?
-    return true if @args.include?("-Wl,-undefined,dynamic_lookup")
-
-    args_consecutive_pairs = @args.each_cons(2)
-    return true if args_consecutive_pairs.include?(["-undefined", "dynamic_lookup"])
-    return true if args_consecutive_pairs.include?(["-Wl,-undefined", "-Wl,dynamic_lookup"])
+    return true if @args.each_cons(2).include?(["-undefined", "dynamic_lookup"])
+    return true if linker_flags.each_cons(2).include?(["-undefined", "dynamic_lookup"])
 
     # The next flag would produce an error, but we fix it in `refurbish_arg`.
     @args.include?("-undefineddynamic_lookup")
   end
 
   def oso_prefix?
-    config.include?("o") && !configure?
+    config.include?("o") && !configure? && !debug_symbols?
   end
 
   def ld_classic?
-    config.include?("c") && calls_ld? && @args.any? { |arg| arg.match?(/^(-Wl,)?-dead_strip_dylibs$/) }
+    return false unless config.include?("c")
+    return false unless calls_ld?
+
+    @args.include?("-dead_strip_dylibs") || linker_flags.include?("-dead_strip_dylibs")
   end
 
   def calls_ld?

@@ -30,6 +30,9 @@ module Homebrew
                description: "Print formulae/casks with fully-qualified names."
         switch "--no-pull-requests",
                description: "Do not retrieve pull requests from GitHub."
+        switch "--auto",
+               description: "Read the list of formulae/casks from the tap autobump list.",
+               hidden:      true
         switch "--formula", "--formulae",
                description: "Check only formulae."
         switch "--cask", "--casks",
@@ -52,6 +55,7 @@ module Homebrew
         conflicts "--cask", "--formula"
         conflicts "--tap=", "--installed"
         conflicts "--eval-all", "--installed"
+        conflicts "--installed", "--auto"
         conflicts "--no-pull-requests", "--open-pr"
 
         named_args [:formula, :cask], without_api: true
@@ -64,9 +68,26 @@ module Homebrew
         Homebrew.with_no_api_env do
           eval_all = args.eval_all? || Homebrew::EnvConfig.eval_all?
 
-          formulae_and_casks = if args.tap
-            tap = Tap.fetch(T.must(args.tap))
-            raise UsageError, "`--tap` cannot be used with official taps." if tap.official?
+          formulae_and_casks = if args.auto?
+            raise UsageError, "`--formula` or `--cask` must be passed with `--auto`." if !args.formula? && !args.cask?
+
+            tap_arg = args.tap
+            raise UsageError, "`--tap=` must be passed with `--auto`." if tap_arg.blank?
+
+            tap = Tap.fetch(tap_arg)
+            autobump_list = tap.autobump
+            what = args.cask? ? "casks" : "formulae"
+            raise UsageError, "No autobumped #{what} found." if autobump_list.blank?
+
+            autobump_list.map do |name|
+              qualified_name = "#{tap.name}/#{name}"
+              next Cask::CaskLoader.load(qualified_name) if args.cask?
+
+              Formulary.factory(qualified_name)
+            end
+          elsif args.tap
+            tap = Tap.fetch(args.tap)
+            raise UsageError, "`--tap` requires `--auto` for official taps." if tap.official?
 
             formulae = args.cask? ? [] : tap.formula_files.map { |path| Formulary.factory(path) }
             casks = args.formula? ? [] : tap.cask_files.map { |path| Cask::CaskLoader.load(path) }
@@ -116,7 +137,7 @@ module Homebrew
       def skip_repology?(formula_or_cask)
         return true unless args.repology?
 
-        (ENV["CI"].present? && args.open_pr? && formula_or_cask.livecheckable?) ||
+        (ENV["CI"].present? && args.open_pr? && formula_or_cask.livecheck_defined?) ||
           (formula_or_cask.is_a?(Formula) && formula_or_cask.versioned_formula?)
       end
 
@@ -249,15 +270,16 @@ module Homebrew
         ).returns T.nilable(T.any(T::Array[String], String))
       }
       def retrieve_pull_requests(formula_or_cask, name, version: nil)
-        tap_remote_repo = formula_or_cask.tap&.remote_repo || formula_or_cask.tap&.full_name
+        tap_remote_repo = formula_or_cask.tap&.remote_repository || formula_or_cask.tap&.full_name
         pull_requests = begin
           GitHub.fetch_pull_requests(name, tap_remote_repo, version:)
         rescue GitHub::API::ValidationFailedError => e
           odebug "Error fetching pull requests for #{formula_or_cask} #{name}: #{e}"
           nil
         end
+        return if pull_requests.blank?
 
-        pull_requests&.map { |pr| "#{pr["title"]} (#{Formatter.url(pr["html_url"])})" }&.join(", ")
+        pull_requests.map { |pr| "#{pr["title"]} (#{Formatter.url(pr["html_url"])})" }.join(", ")
       end
 
       sig {
@@ -298,14 +320,16 @@ module Homebrew
 
             livecheck_latest = livecheck_result(loaded_formula_or_cask)
 
-            new_version_value = if (livecheck_latest.is_a?(Version) && livecheck_latest >= current_version_value) ||
+            new_version_value = if (livecheck_latest.is_a?(Version) &&
+                                    Livecheck::LivecheckVersion.create(formula_or_cask, livecheck_latest) >=
+                                    Livecheck::LivecheckVersion.create(formula_or_cask, current_version_value)) ||
                                    current_version_value == "latest"
               livecheck_latest
             elsif livecheck_latest.is_a?(String) && livecheck_latest.start_with?("skipped")
               "skipped"
             elsif repology_latest.is_a?(Version) &&
                   repology_latest > current_version_value &&
-                  !loaded_formula_or_cask.livecheckable? &&
+                  !loaded_formula_or_cask.livecheck_defined? &&
                   current_version_value != "latest"
               repology_latest
             end.presence
@@ -342,21 +366,27 @@ module Homebrew
           new_version = BumpVersionParser.new(general: "unable to get versions")
         end
 
-        # We use the arm version for the pull request version. This is consistent
-        # with the behavior of bump-cask-pr.
-        pull_request_version = if multiple_versions && new_version.general != "unable to get versions"
-          new_version.arm.to_s
-        else
-          new_version.general.to_s
+        if !args.no_pull_requests? &&
+           (new_version.general != "unable to get versions") &&
+           (new_version != current_version)
+          # We use the ARM version for the pull request version. This is
+          # consistent with the behavior of bump-cask-pr.
+          pull_request_version = if multiple_versions
+            new_version.arm.to_s
+          else
+            new_version.general.to_s
+          end
+
+          duplicate_pull_requests = retrieve_pull_requests(
+            formula_or_cask,
+            name,
+            version: pull_request_version,
+          )
+
+          maybe_duplicate_pull_requests = if duplicate_pull_requests.nil?
+            retrieve_pull_requests(formula_or_cask, name)
+          end
         end
-
-        duplicate_pull_requests = unless args.no_pull_requests?
-          retrieve_pull_requests(formula_or_cask, name, version: pull_request_version)
-        end.presence
-
-        maybe_duplicate_pull_requests = if !args.no_pull_requests? && duplicate_pull_requests.blank?
-          retrieve_pull_requests(formula_or_cask, name)
-        end.presence
 
         VersionBumpInfo.new(
           type:,
@@ -388,9 +418,7 @@ module Homebrew
         repology_latest = version_info.repology_latest
 
         # Check if all versions are equal
-        versions_equal = [:arm, :intel, :general].all? do |key|
-          current_version.send(key) == new_version.send(key)
-        end
+        versions_equal = (new_version == current_version)
 
         title_name = ambiguous_cask ? "#{name} (cask)" : name
         title = if (repology_latest == current_version.general || !repology_latest.is_a?(Version)) && versions_equal
@@ -416,8 +444,8 @@ module Homebrew
         end
 
         version_label = version_info.version_name
-        duplicate_pull_requests = version_info.duplicate_pull_requests.presence
-        maybe_duplicate_pull_requests = version_info.maybe_duplicate_pull_requests.presence
+        duplicate_pull_requests = version_info.duplicate_pull_requests
+        maybe_duplicate_pull_requests = version_info.maybe_duplicate_pull_requests
 
         ohai title
         puts <<~EOS
@@ -434,10 +462,24 @@ module Homebrew
                                       #{outdated_synced_formulae.join(", ")}.
           EOS
         end
-        puts <<~EOS unless args.no_pull_requests?
-          Duplicate pull requests:       #{duplicate_pull_requests       || "none"}
-          Maybe duplicate pull requests: #{maybe_duplicate_pull_requests || "none"}
-        EOS
+        if !args.no_pull_requests? &&
+           (new_version.general != "unable to get versions") &&
+           !versions_equal
+          if duplicate_pull_requests
+            duplicate_pull_requests_text = duplicate_pull_requests
+          elsif maybe_duplicate_pull_requests
+            duplicate_pull_requests_text = "none"
+            maybe_duplicate_pull_requests_text = maybe_duplicate_pull_requests
+          else
+            duplicate_pull_requests_text = "none"
+            maybe_duplicate_pull_requests_text = "none"
+          end
+
+          puts "Duplicate pull requests:  #{duplicate_pull_requests_text}"
+          if maybe_duplicate_pull_requests_text
+            puts "Maybe duplicate pull requests: #{maybe_duplicate_pull_requests_text}"
+          end
+        end
 
         return unless args.open_pr?
 
@@ -448,8 +490,8 @@ module Homebrew
         if repology_latest.is_a?(Version) &&
            repology_latest > current_version.general &&
            repology_latest > new_version.general &&
-           formula_or_cask.livecheckable?
-          puts "#{title_name} was not bumped to the Repology version because it's livecheckable."
+           formula_or_cask.livecheck_defined?
+          puts "#{title_name} was not bumped to the Repology version because it has a `livecheck` block."
         end
         if new_version.blank? || versions_equal ||
            (!new_version.general.is_a?(Version) && !version_info.multiple_versions)
